@@ -25,6 +25,8 @@ import type { AIMonitor } from './ai-monitor.js';
 import { getLogger } from './logger.js';
 import { getBuildInfo } from './build-info.js';
 
+const INIT_HISTORY_MS = 3600_000;
+
 const log = getLogger('WS');
 
 export interface ServiceStatusProvider {
@@ -197,8 +199,11 @@ export class WebSocketTransport {
       zones: this.store.zones,
       layerTimes: this.store.layerTimes,
       filamentUsage: this.store.getFilamentUsageArray(),
-      chartHistory: this.store.getChartHistory(),
-      aiChartHistory: this.store.getAIChartHistory(),
+      // Une heure suffit aux graphes du navigateur ; l'historique complet pèse plusieurs Mo.
+      chartHistory: this.store.getChartHistory().filter((p) => p.t >= Date.now() - INIT_HISTORY_MS),
+      aiChartHistory: this.store
+        .getAIChartHistory()
+        .filter((p) => p.t >= Date.now() - INIT_HISTORY_MS),
       eventLog: this.store.getEventLog(),
       serviceStatus: this.getServiceStatus(),
     };
@@ -229,7 +234,7 @@ export class WebSocketTransport {
   /** Message types the next one supersedes: safe to skip, unlike responses and status deltas */
   private static readonly LOSSY = new Set(['raw', 'chart_data', 'ai_chart_data', 'service_status']);
 
-  broadcast(data: { type: string }): void {
+  broadcast(data: { type: string; [key: string]: unknown }): void {
     const json = JSON.stringify(data);
     const lossy = WebSocketTransport.LOSSY.has(data.type);
     for (const client of this.wss.clients) {

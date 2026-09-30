@@ -78,18 +78,18 @@ describe('formatEvent — Telegram wording for an OTA transition', () => {
   it('a full successful update (idle → 2701 → 2702 → 2703 → 2704 → idle) sends exactly two messages', () => {
     const sent = notificationsFor([0, 2701, 2702, 2703, 2704, 0]);
     expect(sent).toHaveLength(2);
-    expect(sent[0]).toContain('Firmware update in progress');
-    expect(sent[0]).toContain('do not power off the printer');
+    expect(sent[0]).toContain('Mise à jour du firmware en cours');
+    expect(sent[0]).toContain("ne pas éteindre l'imprimante");
     expect(sent[0]).toContain('Downloading');
-    expect(sent[1]).toContain('Firmware update complete');
-    expect(sent[1]).toContain('restart on its own');
+    expect(sent[1]).toContain('Mise à jour du firmware terminée');
+    expect(sent[1]).toContain('redémarre toute seule');
   });
 
   it('an update that fails (idle → 2701 → 2705 → idle) sends the warning and then the failure', () => {
     const sent = notificationsFor([0, 2701, 2705, 0]);
     expect(sent).toHaveLength(2);
-    expect(sent[0]).toContain('do not power off the printer');
-    expect(sent[1]).toContain('Firmware update failed');
+    expect(sent[0]).toContain("ne pas éteindre l'imprimante");
+    expect(sent[1]).toContain('Mise à jour du firmware en échec');
     expect(sent[1]).toContain('Downloading');
   });
 
@@ -100,7 +100,7 @@ describe('formatEvent — Telegram wording for an OTA transition', () => {
 
   it('leaving an in-progress phase without a terminal code sends the neutral "ended" message', () => {
     const { text, urgent } = formatEvent(subStatusEvent(2703, 0));
-    expect(text).toContain('Firmware update ended');
+    expect(text).toContain('État actuel');
     expect(urgent).toBe(false);
   });
 
@@ -200,7 +200,7 @@ describe('StateStore baseline — a service start that lands inside a firmware u
     expect(e.toCode).toBe(2703);
     expect(e.to).toBe('OTA Updating');
     expect(classifyOtaTransition(e.fromCode, e.toCode)).toBe('entered');
-    expect(formatEvent(e).text).toContain('do not power off the printer');
+    expect(formatEvent(e).text).toContain("ne pas éteindre l'imprimante");
   });
 
   it('emits nothing extra when the baseline is an ordinary idle status', () => {
@@ -220,6 +220,6 @@ describe('StateStore baseline — a service start that lands inside a firmware u
       [-1, 2703],
       [2703, 0],
     ]);
-    expect(formatEvent(subs[1]).text).toContain('Firmware update ended');
+    expect(formatEvent(subs[1]).text).toContain('État actuel');
   });
 });

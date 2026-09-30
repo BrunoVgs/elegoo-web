@@ -1,0 +1,272 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail-w) 1fr;
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas:
+    "top top"
+    "rail stage";
+  height: 100dvh;
+}
+
+/* ---- barre du haut ---- */
+
+.topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.topbar-id {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.topbar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.topbar-dot[data-state="connected"] {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+
+.topbar-dot[data-state="connecting"] {
+  background: var(--warn);
+}
+
+.topbar-dot[data-state="error"],
+.topbar-dot[data-state="disconnected"] {
+  background: var(--danger);
+}
+
+.topbar-name {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.topbar-state .pill {
+  flex: none;
+}
+
+.topbar-progress {
+  flex: 1;
+  max-width: 260px;
+  height: 3px;
+  background: var(--surface-3);
+}
+
+.topbar-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.6s ease;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ---- rail de navigation ---- */
+
+.rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.rail-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 4px 8px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+
+.rail-item svg {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-item:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.rail-item[aria-current="page"] {
+  color: var(--text);
+}
+
+.rail-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--brand);
+}
+
+.rail-badge {
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* ---- zone de contenu ---- */
+
+.stage {
+  grid-area: stage;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+.view {
+  padding: var(--gap);
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+.banners:empty {
+  display: none;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px var(--pad);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.banner svg {
+  width: 16px;
+  height: 16px;
+}
+
+.banner.danger {
+  background: var(--danger-dim);
+  color: var(--danger);
+}
+
+.banner.warn {
+  background: var(--warn-dim);
+  color: var(--warn);
+}
+
+.banner.info {
+  background: var(--info-dim);
+  color: var(--info);
+}
+
+.banner .banner-text {
+  flex: 1;
+  color: var(--text);
+}
+
+/* ---- mobile : barre d'onglets en bas ---- */
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--topbar-h) 1fr calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    grid-template-areas:
+      "top"
+      "stage"
+      "rail";
+  }
+
+  .rail {
+    flex-direction: row;
+    padding: 0 0 env(safe-area-inset-bottom);
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .rail-item {
+    flex: 1 0 58px;
+    justify-content: center;
+    padding: 6px 2px;
+    font-size: 10.5px;
+  }
+
+  .rail-item[aria-current="page"]::before {
+    left: 10px;
+    right: 10px;
+    top: 0;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+
+  .rail-badge {
+    top: 5px;
+    right: calc(50% - 16px);
+  }
+
+  .topbar {
+    padding: 0 6px 0 12px;
+    gap: 8px;
+  }
+
+  .topbar-progress {
+    display: none;
+  }
+
+  .view {
+    padding: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-state .topbar-extra {
+    display: none;
+  }
+}

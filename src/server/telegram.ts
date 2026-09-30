@@ -1,15 +1,20 @@
 /**
- * Telegram integration — plugs into the shared StateStore.
- * No own MQTT connection; uses the service's singleton bridge.
+ * Bot Telegram : notifications et commandes à distance, branché sur le StateStore partagé.
+ * Aucune connexion MQTT propre ; les commandes passent par le pont unique du service.
  */
 
-import { Bot, InputFile, InputMediaBuilder } from 'grammy';
+import { Bot, InlineKeyboard, InputFile, InputMediaBuilder } from 'grammy';
 import type { Context } from 'grammy';
 import type { StateStore, PrintEvent } from './state-store.js';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { ServiceConfig } from './config.js';
 import { getSnapshot } from './rest-api.js';
-import { CRITICAL_EXCEPTIONS } from '../types.js';
+import {
+  CRITICAL_EXCEPTIONS,
+  EXCEPTION_NAMES,
+  SPEED_MODE_NAMES,
+  SUB_STATUS_NAMES,
+} from '../types.js';
 import { isAllowedSender } from './allowlist.js';
 import { classifyOtaTransition, otaPhaseName } from './ota-status.js';
 import type { AIAlert } from './ai-monitor.js';
@@ -17,15 +22,26 @@ import { getLogger } from './logger.js';
 
 const log = getLogger('Telegram');
 
-/** Escape special chars for Telegram MarkdownV2 */
+const TZ = 'Europe/Paris';
+const PAUSED_SUB = new Set([2501, 2502, 2505]);
+
+const ISSUE_FR: Record<string, string> = {
+  spaghetti: 'spaghetti',
+  bed_adhesion: 'pièce décollée',
+  stringing: 'fils',
+  layer_shift: 'décalage de couche',
+  warping: 'warping',
+  blob: 'amas sur la buse',
+  empty_bed: 'plateau vide',
+  stall: 'impression figée',
+};
+
+/** Échappe les caractères réservés de MarkdownV2. */
 function esc(text: string): string {
   return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
-/**
- * Safety-net: catch any MarkdownV2 special chars that slipped through unescaped.
- * Uses negative lookbehind so already-escaped chars (preceded by \) are untouched.
- */
+/** Filet de sécurité : un `|` oublié non échappé fait rejeter le message entier. */
 function safeCaption(text: string): string {
   return text.replace(/(?<!\\)([|])/g, '\\$1');
 }
@@ -33,8 +49,17 @@ function safeCaption(text: string): string {
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (h > 0) return `${h} h ${String(m).padStart(2, '0')}`;
+  return `${m} min`;
+}
+
+function clock(date: Date, withSeconds = false): string {
+  return date.toLocaleTimeString('fr-FR', {
+    timeZone: TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+  });
 }
 
 function progressBar(pct: number, length = 20): string {
@@ -42,51 +67,52 @@ function progressBar(pct: number, length = 20): string {
   return '█'.repeat(filled) + '░'.repeat(length - filled);
 }
 
+function prettyFile(name: string): string {
+  return (name.split('/').pop() ?? name).replace(/\.(gcode|3mf)$/i, '');
+}
+
 /**
- * Map a print event to its Telegram message (MarkdownV2). Exported so the wording and
- * the which-events-notify decision can be pinned without standing up a bot — an empty
- * `text` means the event is not sent at all.
+ * Texte Telegram (MarkdownV2) d'un événement d'impression. Exporté pour tester le libellé
+ * et le choix des événements notifiés sans démarrer de bot : `text` vide = rien n'est envoyé.
  */
 export function formatEvent(event: PrintEvent): { text: string; urgent: boolean } {
   switch (event.type) {
     case 'connected':
-      return { text: `🟢 *Connected to printer*\nSN: \`${event.sn}\``, urgent: false };
+      return { text: `🟢 *Imprimante connectée*\nN° de série : \`${event.sn}\``, urgent: false };
     case 'disconnected':
-      return { text: '🔴 *Printer disconnected*', urgent: true };
+      return { text: '🔴 *Imprimante déconnectée*', urgent: true };
     case 'print_started':
-      return { text: `🚀 *Print Started*\n📄 ${esc(event.filename)}`, urgent: false };
+      return {
+        text: `🚀 *Impression lancée*\n📄 ${esc(prettyFile(event.filename))}`,
+        urgent: false,
+      };
     case 'print_completed':
       return {
-        text: `✅ *Print Completed\\!*\n📄 ${esc(event.filename)}\n⏱ Duration: ${esc(formatDuration(event.duration))}`,
+        text: `✅ *Impression terminée*\n📄 ${esc(prettyFile(event.filename))}\n⏱ Durée : ${esc(formatDuration(event.duration))}`,
         urgent: false,
       };
     case 'print_failed':
       return {
-        text: `❌ *Print Failed/Stopped*\n📄 ${esc(event.filename)}\n💬 ${esc(event.reason)}`,
+        text: `❌ *Impression interrompue*\n📄 ${esc(prettyFile(event.filename))}\n💬 ${esc(event.reason)}`,
         urgent: true,
       };
     case 'print_progress': {
-      const bar = progressBar(event.progress);
-      const layerStr = event.totalLayers
-        ? `Layer ${event.layer} of ${event.totalLayers}`
-        : `Layer ${event.layer}`;
       const now = new Date();
-      const updatedAt = now.toLocaleTimeString('nb-NO', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
       const eta = new Date(now.getTime() + event.remaining * 1000);
-      const etaStr = eta.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      const sameDay = eta.toDateString() === now.toDateString();
+      const etaStr = `${sameDay ? '' : 'demain '}${clock(eta)}`;
+      const layerStr = event.totalLayers
+        ? `Couche ${event.layer} sur ${event.totalLayers}`
+        : `Couche ${event.layer}`;
       return {
         text: [
-          `📊 *Print Progress: ${event.progress}%*`,
-          `\`${bar}\``,
-          `📄 ${esc(event.filename)}`,
+          `📊 *Impression : ${event.progress} %*`,
+          `\`${progressBar(event.progress)}\``,
+          `📄 ${esc(prettyFile(event.filename))}`,
           `📐 ${esc(layerStr)}`,
-          `⏱ Remaining: ${esc(formatDuration(event.remaining))}`,
-          `🏁 ETA: ${esc(etaStr)}`,
-          `🕐 Updated: ${esc(updatedAt)}`,
+          `⏱ Restant : ${esc(formatDuration(event.remaining))}`,
+          `🏁 Fin prévue : ${esc(etaStr)}`,
+          `🕐 Mis à jour à ${esc(clock(now, true))}`,
         ].join('\n'),
         urgent: false,
       };
@@ -99,18 +125,18 @@ export function formatEvent(event: PrintEvent): { text: string; urgent: boolean 
         return `${icon} ${esc(name)} \\(${code}\\)`;
       });
       return {
-        text: `${hasCritical ? '🚨' : '⚠️'} *Printer Error*\n${lines.join('\n')}`,
+        text: `${hasCritical ? '🚨' : '⚠️'} *Erreur imprimante*\n${lines.join('\n')}`,
         urgent: hasCritical,
       };
     }
     case 'filament_runout':
       return {
-        text: '🧵 *Filament Runout Detected\\!*\nPrinter is paused, please load new filament\\.',
+        text: "🧵 *Fin de filament*\nL'impression est en pause, charger une nouvelle bobine\\.",
         urgent: true,
       };
     case 'first_layer_complete':
       return {
-        text: `🥇 *First Layer Complete\\!*\n📄 ${esc(event.filename)}\n⏱ Layer took: ${esc(formatDuration(event.durationSec))}`,
+        text: `🥇 *Première couche terminée*\n📄 ${esc(prettyFile(event.filename))}\n⏱ Durée de la couche : ${esc(formatDuration(event.durationSec))}\nVérifier l'adhérence sur la photo\\.`,
         urgent: false,
       };
     case 'sub_status_change':
@@ -121,11 +147,8 @@ export function formatEvent(event: PrintEvent): { text: string; urgent: boolean 
 }
 
 /**
- * OTA firmware-update progress (ELEG-104), read-only — the same "do not power off"
- * state the web banner shows (ELEG-98), sent once on the way in and once on the way out
- * rather than on every 2701 → 2702 → 2703 hop. `classifyOtaTransition` is the whole of
- * that rule; every other sub-status change stays silent, as it always was. Nothing here
- * sends an OTA command (method 1039 is parked in ELEG-99).
+ * Mise à jour du firmware, en lecture seule : un message à l'entrée, un à la sortie,
+ * jamais à chaque étape intermédiaire. Aucune commande OTA n'est envoyée d'ici.
  */
 function formatOtaTransition(event: Extract<PrintEvent, { type: 'sub_status_change' }>): {
   text: string;
@@ -134,22 +157,22 @@ function formatOtaTransition(event: Extract<PrintEvent, { type: 'sub_status_chan
   switch (classifyOtaTransition(event.fromCode, event.toCode)) {
     case 'entered':
       return {
-        text: `⚠️ *Firmware update in progress — do not power off the printer\\.*\n🔧 Phase: ${esc(otaPhaseName(event.toCode))}`,
+        text: `⚠️ *Mise à jour du firmware en cours : ne pas éteindre l'imprimante\\.*\n🔧 Étape : ${esc(otaPhaseName(event.toCode))}`,
         urgent: true,
       };
     case 'completed':
       return {
-        text: '✅ *Firmware update complete*\nThe printer will restart on its own\\.',
+        text: "✅ *Mise à jour du firmware terminée*\nL'imprimante redémarre toute seule\\.",
         urgent: false,
       };
     case 'failed':
       return {
-        text: `❌ *Firmware update failed*\n🔧 Last phase: ${esc(otaPhaseName(event.fromCode))}`,
+        text: `❌ *Mise à jour du firmware en échec*\n🔧 Dernière étape : ${esc(otaPhaseName(event.fromCode))}`,
         urgent: true,
       };
     case 'ended':
       return {
-        text: `ℹ️ *Firmware update ended*\nThe printer now reports: ${esc(event.to)}`,
+        text: `ℹ️ *Mise à jour du firmware terminée*\nÉtat actuel : ${esc(event.to)}`,
         urgent: false,
       };
     default:
@@ -157,10 +180,13 @@ function formatOtaTransition(event: Extract<PrintEvent, { type: 'sub_status_chan
   }
 }
 
+type Phase = 'printing' | 'paused' | 'other';
+
 export class TelegramIntegration {
   private bot: Bot;
   private liveMessageId: number | null = null;
   private eventQueue: Promise<void> = Promise.resolve();
+  private _running = false;
 
   constructor(
     private store: StateStore,
@@ -170,7 +196,7 @@ export class TelegramIntegration {
     this.bot = new Bot(config.telegramToken);
     this.registerCommands();
 
-    // Listen for print events — serialized to avoid race conditions
+    // Événements sérialisés : deux messages ne se croisent jamais.
     store.on('print_event', (event: PrintEvent) => {
       log.info(`Event: ${event.type}`);
       this.eventQueue = this.eventQueue
@@ -180,18 +206,64 @@ export class TelegramIntegration {
         });
     });
 
-    // A different printer (ELEG-95): the live progress message belongs to the old one,
-    // so the new printer's progress must start a message of its own, not edit that one.
+    // Autre imprimante : le message de progression en cours appartenait à la précédente.
     store.on('printer_switched', () => {
       this.liveMessageId = null;
     });
   }
 
+  private get phase(): Phase {
+    const ms = this.store.status?.machine_status;
+    if (ms?.status !== 2) return 'other';
+    return PAUSED_SUB.has(ms.sub_status) ? 'paused' : 'printing';
+  }
+
+  /** Boutons sous un message : photo toujours, pause ou reprise selon l'état. */
+  private keyboard(): InlineKeyboard {
+    const kb = new InlineKeyboard().text('📷 Photo', 'photo');
+    if (this.phase === 'printing') kb.text('⏸ Pause', 'ask:pause');
+    if (this.phase === 'paused') kb.text('▶️ Reprendre', 'ask:resume');
+    return kb;
+  }
+
+  private statusText(): string {
+    const s = this.store.status;
+    if (!s) return 'État inconnu \\(imprimante non connectée\\)';
+    const ms = s.machine_status;
+    const ps = s.print_status;
+    const lines: string[] = [];
+    const sub = SUB_STATUS_NAMES[ms?.sub_status ?? 0];
+    lines.push(
+      `*État :* ${esc(this.phase === 'paused' ? 'en pause' : this.phase === 'printing' ? 'impression' : 'au repos')}${sub ? ` \\(${esc(sub)}\\)` : ''}`,
+    );
+    lines.push(
+      `🌡 *Buse :* ${Math.round(s.extruder?.temperature ?? 0)} °C${s.extruder?.target ? ` → ${s.extruder.target} °C` : ''}`,
+    );
+    lines.push(
+      `🌡 *Plateau :* ${Math.round(s.heater_bed?.temperature ?? 0)} °C${s.heater_bed?.target ? ` → ${s.heater_bed.target} °C` : ''}`,
+    );
+    if (s.ztemperature_sensor?.temperature)
+      lines.push(`🌡 *Caisson :* ${Math.round(s.ztemperature_sensor.temperature)} °C`);
+    if (ms?.status === 2 && ps) {
+      const total = ps.total_layer || this.store.fileTotalLayers || 0;
+      lines.push('');
+      lines.push(`📄 ${esc(prettyFile(ps.filename || '?'))}`);
+      lines.push(`📊 *Progression :* ${ms.progress ?? 0} %`);
+      lines.push(`📐 *Couche :* ${ps.current_layer ?? '?'}${total ? ` sur ${total}` : ''}`);
+      lines.push(`⏱ *Restant :* ${esc(formatDuration(ps.remaining_time_sec ?? 0))}`);
+      lines.push(`⚡ *Vitesse :* ${esc(SPEED_MODE_NAMES[s.gcode_move?.speed_mode ?? 1] ?? '')}`);
+    }
+    const errors = ms?.exception_status ?? [];
+    if (errors.length)
+      lines.push(
+        `\n⚠️ *Erreurs :* ${esc(errors.map((c) => EXCEPTION_NAMES[c] ?? `code ${c}`).join(', '))}`,
+      );
+    return lines.join('\n');
+  }
+
   private registerCommands(): void {
-    // Sender gate, BEFORE any handler (ELEG-3). Middleware rather than a check inside
-    // each command, so a command added later is gated by construction instead of by
-    // somebody remembering. Drops silently: replying "unauthorised" confirms the bot
-    // exists and which chat it belongs to.
+    // Filtre d'expéditeur AVANT tout gestionnaire : une commande ajoutée plus tard est
+    // protégée d'office. Silencieux : répondre confirmerait l'existence du bot.
     const allowed = this.config.telegramAllowedChatIds;
     this.bot.use(async (ctx, next) => {
       if (isAllowedSender(allowed, ctx.from?.id)) {
@@ -201,52 +273,113 @@ export class TelegramIntegration {
       log.warn(`Ignoring update from unauthorised sender ${ctx.from?.id ?? 'unknown'}`);
     });
 
-    this.bot.command('start', async (ctx) => {
-      await ctx.reply(
-        '🖨 *Elegoo CC2 Telegram Bot*\n\n' +
-          'Commands:\n' +
-          '/status — Current printer status\n' +
-          '/photo — Camera snapshot\n' +
-          '/help — Show this message',
-        { parse_mode: 'MarkdownV2' },
-      );
+    const help =
+      '🖨 *Centauri Carbon 2*\n\n' +
+      '/status : état et photo\n' +
+      '/photo : photo de la caméra\n' +
+      "/pause : mettre l'impression en pause\n" +
+      "/resume : reprendre l'impression";
+
+    this.bot.command(['start', 'help'], async (ctx) => {
+      await ctx.reply(help, { parse_mode: 'MarkdownV2' });
     });
 
-    this.bot.command('help', async (ctx) => {
-      await ctx.reply(
-        '🖨 *Elegoo CC2 Telegram Bot*\n\n' +
-          '/status — Current printer status\n' +
-          '/photo — Camera snapshot',
-        { parse_mode: 'MarkdownV2' },
-      );
-    });
+    this.bot.command('status', (ctx) => this.replyStatus(ctx));
+    this.bot.command('photo', (ctx) => this.replyPhoto(ctx));
+    this.bot.command('pause', (ctx) => this.askConfirm(ctx, 'pause'));
+    this.bot.command('resume', (ctx) => this.askConfirm(ctx, 'resume'));
 
-    this.bot.command('status', async (ctx) => {
-      const summary = safeCaption(this.store.getStatusSummary());
-      const photo = await getSnapshot(this.config);
-      if (photo) {
-        await ctx.replyWithPhoto(new InputFile(photo, 'snapshot.jpg'), {
-          caption: summary,
-          parse_mode: 'MarkdownV2',
+    this.bot.callbackQuery('photo', async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await this.replyPhoto(ctx);
+    });
+    this.bot.callbackQuery(/^ask:(pause|resume)$/, async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await this.askConfirm(ctx, ctx.match[1] as 'pause' | 'resume');
+    });
+    this.bot.callbackQuery(/^do:(pause|resume)$/, async (ctx) => {
+      const action = ctx.match[1] as 'pause' | 'resume';
+      const expected: Phase = action === 'pause' ? 'printing' : 'paused';
+      // L'état a pu changer entre la question et la réponse : on revérifie.
+      if (this.phase !== expected) {
+        await ctx.answerCallbackQuery({
+          text:
+            action === 'pause' ? 'Aucune impression en cours' : "L'impression n'est pas en pause",
         });
-      } else {
-        await ctx.reply(summary, { parse_mode: 'MarkdownV2' });
-      }
-    });
-
-    this.bot.command('photo', async (ctx: Context) => {
-      if (!this.config.cameraEnabled) {
-        await ctx.reply('📷 Camera is disabled in config\\.');
+        await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => undefined);
         return;
       }
-      const photo = await getSnapshot(this.config);
-      if (!photo) {
-        await ctx.reply('📷 Could not fetch camera snapshot\\.');
-        return;
-      }
-      await ctx.replyWithPhoto(new InputFile(photo, 'snapshot.jpg'), {
-        caption: '📷 Camera snapshot',
+      this.bridge.sendCommand(action === 'pause' ? 1021 : 1023, {});
+      log.info(`Telegram: ${action} sent by ${ctx.from?.id}`);
+      await ctx.answerCallbackQuery({
+        text: action === 'pause' ? 'Pause envoyée' : 'Reprise envoyée',
       });
+      await ctx
+        .editMessageText(
+          action === 'pause'
+            ? "⏸ Pause envoyée à l'imprimante\\."
+            : "▶️ Reprise envoyée à l'imprimante\\.",
+          { parse_mode: 'MarkdownV2' },
+        )
+        .catch(() => undefined);
+    });
+    this.bot.callbackQuery('cancel', async (ctx) => {
+      await ctx.answerCallbackQuery({ text: 'Annulé' });
+      await ctx.deleteMessage().catch(() => undefined);
+    });
+  }
+
+  private async askConfirm(ctx: Context, action: 'pause' | 'resume'): Promise<void> {
+    const expected: Phase = action === 'pause' ? 'printing' : 'paused';
+    if (this.phase !== expected) {
+      await ctx.reply(
+        action === 'pause' ? 'Aucune impression en cours\\.' : "L'impression n'est pas en pause\\.",
+        { parse_mode: 'MarkdownV2' },
+      );
+      return;
+    }
+    const file = esc(prettyFile(this.store.status?.print_status?.filename ?? ''));
+    const text = action === 'pause' ? `Mettre en pause *${file}* ?` : `Reprendre *${file}* ?`;
+    await ctx.reply(text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: new InlineKeyboard()
+        .text(
+          action === 'pause' ? '⏸ Confirmer la pause' : '▶️ Confirmer la reprise',
+          `do:${action}`,
+        )
+        .text('Annuler', 'cancel'),
+    });
+  }
+
+  private async replyStatus(ctx: Context): Promise<void> {
+    const text = safeCaption(this.statusText());
+    const photo = this.config.cameraEnabled ? await getSnapshot(this.config) : null;
+    if (photo) {
+      await ctx.replyWithPhoto(new InputFile(photo, 'snapshot.jpg'), {
+        caption: text,
+        parse_mode: 'MarkdownV2',
+        reply_markup: this.keyboard(),
+      });
+    } else {
+      await ctx.reply(text, { parse_mode: 'MarkdownV2', reply_markup: this.keyboard() });
+    }
+  }
+
+  private async replyPhoto(ctx: Context): Promise<void> {
+    if (!this.config.cameraEnabled) {
+      await ctx.reply('📷 Caméra désactivée dans la configuration\\.', {
+        parse_mode: 'MarkdownV2',
+      });
+      return;
+    }
+    const photo = await getSnapshot(this.config);
+    if (!photo) {
+      await ctx.reply('📷 Caméra injoignable\\.', { parse_mode: 'MarkdownV2' });
+      return;
+    }
+    await ctx.replyWithPhoto(new InputFile(photo, 'snapshot.jpg'), {
+      caption: `📷 ${clock(new Date(), true)}`,
+      reply_markup: this.keyboard(),
     });
   }
 
@@ -265,35 +398,38 @@ export class TelegramIntegration {
           'first_layer_complete',
         ].includes(event.type);
       const photo = wantPhoto ? await getSnapshot(this.config) : null;
+      const withButtons = [
+        'print_started',
+        'print_progress',
+        'first_layer_complete',
+        'filament_runout',
+        'error',
+      ].includes(event.type);
 
-      // Progress: update live message in place
+      // Progression : le message en cours est modifié sur place.
       if (event.type === 'print_progress') {
         const edited = await this.updateLiveMessage(text, photo);
-        if (!edited) {
-          this.liveMessageId = await this.sendNew(text, photo, urgent);
-        }
+        if (!edited) this.liveMessageId = await this.sendNew(text, photo, urgent, true);
         return;
       }
 
-      // Print started: send new live message (skip reconnection-based events)
       if (event.type === 'print_started') {
+        // Reconnexion à une impression déjà en cours : pas de nouveau message.
         if (event.resumed) {
           log.info('Skipping print_started — reconnected to active print');
           return;
         }
-        this.liveMessageId = await this.sendNew(text, photo, urgent);
+        this.liveMessageId = await this.sendNew(text, photo, urgent, true);
         return;
       }
 
-      // Print ended: send as NEW message (not edit), then clear live msg
       if (event.type === 'print_completed' || event.type === 'print_failed') {
-        await this.sendNew(text, photo, urgent);
+        await this.sendNew(text, photo, urgent, false);
         this.liveMessageId = null;
         return;
       }
 
-      // All other events: new message
-      await this.sendNew(text, photo, urgent);
+      await this.sendNew(text, photo, urgent, withButtons);
     } catch (err) {
       log.error(`Failed: ${(err as Error).message}`);
     }
@@ -303,9 +439,11 @@ export class TelegramIntegration {
     text: string,
     photo: Buffer | null,
     urgent: boolean,
+    buttons: boolean,
   ): Promise<number | null> {
     const chatId = this.config.telegramChatId;
     const caption = safeCaption(text);
+    const reply_markup = buttons ? this.keyboard() : undefined;
     if (photo) {
       const msg = await this.bot.api.sendPhoto(
         chatId,
@@ -313,6 +451,8 @@ export class TelegramIntegration {
         {
           caption,
           parse_mode: 'MarkdownV2',
+          disable_notification: !urgent,
+          reply_markup,
         },
       );
       log.info(`Sent new photo message ${msg.message_id}`);
@@ -321,6 +461,7 @@ export class TelegramIntegration {
     const msg = await this.bot.api.sendMessage(chatId, caption, {
       parse_mode: 'MarkdownV2',
       disable_notification: !urgent,
+      reply_markup,
     });
     log.info(`Sent new text message ${msg.message_id}`);
     return msg.message_id;
@@ -336,11 +477,14 @@ export class TelegramIntegration {
           caption,
           parse_mode: 'MarkdownV2',
         });
-        await this.bot.api.editMessageMedia(chatId, this.liveMessageId, media);
+        await this.bot.api.editMessageMedia(chatId, this.liveMessageId, media, {
+          reply_markup: this.keyboard(),
+        });
       } else {
         await this.bot.api.editMessageCaption(chatId, this.liveMessageId, {
           caption,
           parse_mode: 'MarkdownV2',
+          reply_markup: this.keyboard(),
         });
       }
       log.info(`Updated live message ${this.liveMessageId}`);
@@ -349,13 +493,11 @@ export class TelegramIntegration {
       const msg = (err as Error).message;
       if (msg.includes('message is not modified')) return true;
       log.warn(`Edit failed (msgId=${this.liveMessageId}): ${msg}`);
-      // Message might have been deleted — clear tracking so we send a new one
+      // Message supprimé côté Telegram : un nouveau sera envoyé.
       this.liveMessageId = null;
       return false;
     }
   }
-
-  private _running = false;
 
   get isRunning(): boolean {
     return this._running;
@@ -363,6 +505,14 @@ export class TelegramIntegration {
 
   async start(): Promise<void> {
     log.info('Starting bot...');
+    await this.bot.api
+      .setMyCommands([
+        { command: 'status', description: 'État et photo' },
+        { command: 'photo', description: 'Photo de la caméra' },
+        { command: 'pause', description: "Mettre l'impression en pause" },
+        { command: 'resume', description: "Reprendre l'impression" },
+      ])
+      .catch((err) => log.warn(`setMyCommands: ${(err as Error).message}`));
     this.bot.start({
       onStart: () => {
         this._running = true;
@@ -371,24 +521,25 @@ export class TelegramIntegration {
     });
   }
 
-  /** Send an AI alert with optional snapshot */
+  /** Alerte IA avec photo et bouton de pause immédiat. */
   async sendAIAlert(alert: AIAlert): Promise<void> {
-    const esc = (text: string) => text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
     const icon = alert.status === 'critical' ? '🚨' : '⚠️';
-    // Use issue type + confidence — full CLIP labels are too long for Telegram captions (1024 char limit)
+    // Type et confiance seulement : les descriptions CLIP dépassent la limite de légende.
     const issueLines = alert.issues
-      .map((i) => `${icon}  ${esc(i.type)} \\(${Math.round(i.confidence * 100)}%\\)`)
+      .map(
+        (i) =>
+          `${icon} ${esc(ISSUE_FR[i.type] ?? i.type)} \\(${Math.round(i.confidence * 100)} %\\)`,
+      )
       .join('\n');
-
     const text = [
-      `🤖 *AI Print Alert*`,
+      '🤖 *Alerte IA*',
       issueLines || `${icon} ${esc(alert.description.slice(0, 80))}`,
-      `\n_${esc(`Consecutive warnings: ${alert.consecutiveWarnings}`)}_`,
+      `\n_${esc(`${alert.consecutiveWarnings} détections consécutives`)}_`,
     ].join('\n');
 
     try {
       const photo = this.config.cameraEnabled ? await getSnapshot(this.config) : null;
-      await this.sendNew(text, photo, true);
+      await this.sendNew(text, photo, true, true);
     } catch (err) {
       log.error(`AI alert failed: ${(err as Error).message}`);
     }

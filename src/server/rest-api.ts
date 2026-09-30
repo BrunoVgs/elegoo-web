@@ -28,6 +28,7 @@ import type { PrintReportCollector } from './print-report-collector.js';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { PrintQueue } from './print-queue.js';
 import { handlePrintQueueRequest } from './print-queue-routes.js';
+import { handleThumbnail } from './thumbnail-route.js';
 import { generateReportPDF } from './print-report-pdf.js';
 import { getBuildInfo } from './build-info.js';
 import { applyCors, corsHeaders } from './cors.js';
@@ -1222,6 +1223,11 @@ export function createRestRouter(
     // ── File download proxy ─────────────────────────────────────────
     // GET /api/files/download?file=<path>&source=local|u-disk|sd-card
     // Gcode files are cached on disk so they can be served even when the printer is busy
+    if (url.startsWith('/api/files/thumbnail') && req.method === 'GET') {
+      void handleThumbnail(req, res, _bridge);
+      return;
+    }
+
     if (url.startsWith('/api/files/download') && req.method === 'GET') {
       const params = new URL(url, 'http://localhost').searchParams;
       const fileName = params.get('file');

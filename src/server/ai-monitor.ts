@@ -22,6 +22,7 @@ import type { StateStore, PrintEvent } from './state-store.js';
 import { getSnapshot } from './rest-api.js';
 import sharp from 'sharp';
 import { getLogger } from './logger.js';
+import { modelCacheDir } from './data-paths.js';
 
 const log = getLogger('AI');
 
@@ -273,7 +274,8 @@ class LocalAnalyzer {
       // Configure for Node.js server usage
       env.useBrowserCache = false;
       env.allowLocalModels = true;
-      env.cacheDir = '.cache/models';
+      // Sous DATA_DIR : /app n'est pas inscriptible par l'utilisateur du conteneur.
+      env.cacheDir = modelCacheDir();
 
       this.classifier = (await pipeline('zero-shot-image-classification', this.model, {
         dtype: 'q8',

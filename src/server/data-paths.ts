@@ -58,6 +58,16 @@ export function gcodeCacheDir(): string {
  * The same directory `initLogger` writes `service.log` into — deliberately, since both
  * are diagnostics a user is told to go and fetch.
  */
+/** Miniatures des fichiers de l'imprimante, une par fichier et date de création. */
+export function thumbCacheDir(): string {
+  return join(dataDir, 'thumbs');
+}
+
+/** Modèles d'analyse d'image téléchargés par l'IA locale. */
+export function modelCacheDir(): string {
+  return join(dataDir, 'models');
+}
+
 export function captureLogDir(): string {
   return join(dataDir, 'logs');
 }

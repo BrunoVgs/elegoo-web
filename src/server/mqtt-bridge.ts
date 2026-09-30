@@ -39,6 +39,8 @@ export class MqttBridge extends EventEmitter {
   private requestId: string;
   private sn = '';
   private commandId = 0;
+  /** Requêtes internes au service : leur réponse ne part ni au store ni aux navigateurs. */
+  private privateRequests = new Map<number, (data: Record<string, unknown>) => void>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private registerTimer: ReturnType<typeof setInterval> | null = null;
   private slowRegisterTimer: ReturnType<typeof setInterval> | null = null;
@@ -241,6 +243,12 @@ export class MqttBridge extends EventEmitter {
         this.startSlowRegisterRetry();
       }
     } else if (topic.includes('/api_response')) {
+      const waiter = this.privateRequests.get(data.id as number);
+      if (waiter) {
+        this.privateRequests.delete(data.id as number);
+        waiter(data);
+        return;
+      }
       const method = data.method as number;
       this.emit('response', method, data);
     } else if (topic.includes('/api_status')) {
@@ -377,13 +385,41 @@ export class MqttBridge extends EventEmitter {
     }
   }
 
-  sendCommand(method: number, params: Record<string, unknown>): void {
-    if (!this.client || !this.sn) return;
+  sendCommand(method: number, params: Record<string, unknown>): number {
+    if (!this.client || !this.sn) return 0;
     this.commandId++;
     const topic = `elegoo/${this.sn}/${this.clientId}/api_request`;
     const msg = { id: this.commandId, method, params };
     this.client.publish(topic, JSON.stringify(msg));
     this.emit('raw', 'sent', topic, msg);
+    return this.commandId;
+  }
+
+  /**
+   * Lecture dont la réponse revient à l'appelant seul, corrélée par `id` (l'imprimante le
+   * renvoie tel quel). Réservé aux lectures : une miniature demandée ainsi ne remplace pas
+   * celle de l'impression en cours dans le store.
+   */
+  request(
+    method: number,
+    params: Record<string, unknown>,
+    timeoutMs = 10_000,
+  ): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      if (!this._connected) {
+        reject(new Error('printer not connected'));
+        return;
+      }
+      const id = this.sendCommand(method, params);
+      const timer = setTimeout(() => {
+        this.privateRequests.delete(id);
+        reject(new Error(`no response to ${method}`));
+      }, timeoutMs);
+      this.privateRequests.set(id, (data) => {
+        clearTimeout(timer);
+        resolve(data);
+      });
+    });
   }
 
   /** Force a reconnect by tearing down the old client and calling connect() again */

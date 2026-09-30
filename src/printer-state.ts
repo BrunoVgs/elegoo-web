@@ -261,10 +261,14 @@ export class PrinterState {
         // GET_DISK_INFO
         const errorCode = result.error_code as number | undefined;
         if (errorCode === 0) {
+          // Le firmware range les chiffres sous `internal` (ou `udisk`), pas à la racine.
+          const info = (result.internal ?? result.udisk ?? result) as Record<string, number>;
+          const total = info.total_bytes ?? 0;
+          const used = info.used_bytes ?? 0;
           this.storageCapacity = {
-            total: (result.total_bytes as number) ?? 0,
-            free: (result.free_bytes as number) ?? 0,
-            used: (result.used_bytes as number) ?? 0,
+            total,
+            used,
+            free: info.free_bytes ?? Math.max(0, total - used),
           };
           this.notify();
         }
