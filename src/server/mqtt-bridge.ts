@@ -199,8 +199,8 @@ export class MqttBridge extends EventEmitter {
 
     this.emit('raw', 'received', topic, data);
 
-    // Any message from the printer resets the heartbeat miss counter
-    this.heartbeatMissed = 0;
+    // Only a response addressed to this client proves the session is alive
+    if (topic.endsWith('/api_response')) this.heartbeatMissed = 0;
     // ...and proves the printer is not the silent one, which is what separates
     // `awaiting_sn` from a genuine registration problem (ELEG-59).
     this.sawPrinterMessage = true;
