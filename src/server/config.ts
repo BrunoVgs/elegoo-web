@@ -29,6 +29,9 @@ export interface ServiceConfig {
   cameraEnabled: boolean;
   cameraUrl: string;
 
+  /** Bibliothèque de fichiers d'impression (STL, 3MF, G-code) partagée avec le NAS ; vide = désactivée. */
+  libraryDir: string;
+
   /** Cross-origin policy for every HTTP surface; defaults to same-origin (ELEG-24) */
   corsPolicy: CorsPolicy;
 
@@ -171,6 +174,7 @@ export function loadConfig(): ServiceConfig {
     bindAddress,
     cameraEnabled: env('CAMERA_ENABLED') !== 'false',
     cameraUrl: env('CAMERA_URL') || `http://${printerIp}:8080`,
+    libraryDir: env('LIBRARY_DIR'),
     corsPolicy: parseCorsPolicy(env('CORS_ALLOWED_ORIGINS')),
     telegramEnabled: !!(telegramToken && telegramChatId),
     telegramToken,

@@ -154,6 +154,7 @@ recreated — about 200 MB and roughly 95 seconds here, and a good deal slower o
 | `TELEGRAM_CHAT_ID` | — | Telegram chat ID — where notifications are **sent** |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | `TELEGRAM_CHAT_ID` | Comma-separated numeric sender ids permitted to **issue** bot commands. Anyone else is ignored silently |
 | `PROGRESS_INTERVAL` | `25` | Notify every N% progress |
+| `LIBRARY_DIR` | (empty) | Folder of print files (STL, 3MF, G-code) browsable in the UI; G-codes can be sent to the printer and printer files archived into its `GCODEs/` subfolder |
 | `DATA_DIR` | `./data` | Data directory for state, reports, logs |
 | `AI_ENABLED` | `false` | Enable AI print monitoring |
 | `AI_VLM_ENABLED` | `false` | Enable VLM analysis. Opt-in: `AI_ENABLED` alone does **not** turn this on |

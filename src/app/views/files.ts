@@ -4,11 +4,13 @@ import { bytes, date, duration, grams, prettyFile } from '../format';
 import { go } from '../router';
 import { store } from '../store';
 import { button, h, ico, iconButton, panel, segmented, setPressed, setText } from '../ui/dom';
+import { archiveToLibrary, libraryBrowser } from '../ui/library';
 import { confirm } from '../ui/modal';
 import { openPrintDialog } from '../ui/print-dialog';
 import { toast } from '../ui/toast';
 
 type Source = 'local' | 'u-disk';
+type View = Source | 'library';
 type SortKey = 'date' | 'name' | 'size' | 'time';
 
 interface Entry extends FileEntry {
@@ -39,6 +41,7 @@ function thumbUrl(path: string, source: Source, version?: number): string {
 
 export default function mount(host: HTMLElement): () => void {
   let source: Source = 'local';
+  let libraryMode = false;
   let dir = '/';
   let filter = '';
   let sort = readSort();
@@ -53,6 +56,10 @@ export default function mount(host: HTMLElement): () => void {
   };
 
   const refresh = () => {
+    if (libraryMode) {
+      void library.load();
+      return;
+    }
     query(1044, { storage_media: source, dir, offset: 0, limit: 200 });
     query(1048, { storage_media: source });
   };
@@ -63,9 +70,17 @@ export default function mount(host: HTMLElement): () => void {
     [
       { value: 'local', label: 'Interne' },
       { value: 'u-disk', label: 'Clé USB' },
+      { value: 'library', label: 'Bibliothèque' },
     ],
-    source,
+    source as View,
     (v) => {
+      libraryMode = v === 'library';
+      setPressed(sourcePicker, v);
+      filesPanel.classList.toggle('library-mode', libraryMode);
+      if (libraryMode) {
+        void library.load();
+        return;
+      }
       source = v as Source;
       dir = '/';
       selected.clear();
@@ -177,6 +192,8 @@ export default function mount(host: HTMLElement): () => void {
   const upload = h('div', { class: 'upload hidden' });
   const crumbs = h('div', { class: 'crumbs' });
   const list = h('div', { class: 'list files-list' }, h('div', { class: 'empty' }, 'Chargement…'));
+  const library = libraryBrowser({ filter: () => filter, sort: () => sort });
+  library.el.classList.add('library');
 
   /* ---- file d'attente ---- */
 
@@ -184,7 +201,7 @@ export default function mount(host: HTMLElement): () => void {
 
   const filesPanel = panel(
     'Fichiers',
-    h('div', {}, toolbar, storage, selBar, upload, crumbs, list),
+    h('div', {}, toolbar, storage, selBar, upload, crumbs, list, library.el),
     { flush: true },
   );
   const dropHint = h(
@@ -327,6 +344,11 @@ export default function mount(host: HTMLElement): () => void {
         iconButton('download', 'Télécharger', () => {
           window.location.href = `/api/files/download?source=${source}&file=${encodeURIComponent(path)}`;
         }),
+        iconButton(
+          'hdd',
+          'Archiver dans la bibliothèque',
+          (e) => void archiveToLibrary(path, source, e.currentTarget as HTMLElement),
+        ),
         iconButton('trash', 'Supprimer', () => void deleteFiles([path])),
       ),
     );
@@ -348,6 +370,10 @@ export default function mount(host: HTMLElement): () => void {
   };
 
   const render = () => {
+    if (libraryMode) {
+      library.render();
+      return;
+    }
     renderStorage();
     const parts = dir.split('/').filter(Boolean);
     crumbs.replaceChildren(

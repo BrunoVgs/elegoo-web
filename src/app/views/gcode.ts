@@ -4,6 +4,7 @@ import type { FileEntry } from '../../types';
 import { bytes, duration, num, prettyFile } from '../format';
 import { store } from '../store';
 import { button, h, ico, iconButton, panel, setText } from '../ui/dom';
+import { fileUrl } from '../ui/library';
 import { toast } from '../ui/toast';
 
 const BUILD = { x: 256, y: 256, z: 256, smallGrid: false };
@@ -12,7 +13,7 @@ const CAMERA_HOME = [210, 330, 250];
 const CHUNK_BYTES = 1 << 20;
 const RENDER_EVERY_BYTES = 6 << 20;
 
-type Source = 'local' | 'u-disk';
+type Source = 'local' | 'u-disk' | 'library';
 
 interface Loaded {
   path: string;
@@ -25,7 +26,11 @@ function cssVar(name: string): string {
 
 function readParams(): { file: string | null; source: Source } {
   const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
-  return { file: q.get('file'), source: q.get('source') === 'u-disk' ? 'u-disk' : 'local' };
+  const source = q.get('source');
+  return {
+    file: q.get('file'),
+    source: source === 'u-disk' || source === 'library' ? source : 'local',
+  };
 }
 
 function extrusionColors(colorMap: Array<{ t: number; color: string }>): string | string[] {
@@ -337,7 +342,9 @@ export default function mount(host: HTMLElement): () => void {
     loadCancel.classList.remove('hidden');
     try {
       const res = await fetch(
-        `/api/files/download?source=${source}&file=${encodeURIComponent(path)}`,
+        source === 'library'
+          ? fileUrl(path)
+          : `/api/files/download?source=${source}&file=${encodeURIComponent(path)}`,
       );
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const len = Number(res.headers.get('content-length')) || size;

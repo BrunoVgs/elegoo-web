@@ -1122,3 +1122,37 @@
     order: 7;
   }
 }
+
+/* ---- bibliothèque ---- */
+
+.files .library,
+.library-mode .storage,
+.library-mode .selbar,
+.library-mode .upload,
+.library-mode .crumbs:not(.library .crumbs),
+.library-mode .files-list:not(.library .files-list),
+.library-mode .files-toolbar > .btn,
+.library-mode .files-toolbar > input[type="file"] {
+  display: none;
+}
+
+.library-mode .library {
+  display: block;
+}
+
+.library .crumbs {
+  display: flex;
+}
+
+.stl-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stl-canvas {
+  width: 100%;
+  height: min(62vh, 560px);
+  display: block;
+  touch-action: none;
+}

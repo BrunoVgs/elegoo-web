@@ -28,6 +28,7 @@ import type { PrintReportCollector } from './print-report-collector.js';
 import type { MqttBridge } from './mqtt-bridge.js';
 import type { PrintQueue } from './print-queue.js';
 import { handlePrintQueueRequest } from './print-queue-routes.js';
+import { handleLibraryRequest } from './library-routes.js';
 import { handleThumbnail } from './thumbnail-route.js';
 import { generateReportPDF } from './print-report-pdf.js';
 import { getBuildInfo } from './build-info.js';
@@ -99,7 +100,10 @@ export async function cacheGcodeBuffer(
   }
 }
 
-async function getCachedGcode(fileName: string, config: ServiceConfig): Promise<string | null> {
+export async function getCachedGcode(
+  fileName: string,
+  config: ServiceConfig,
+): Promise<string | null> {
   try {
     const cached = join(gcodeCacheDir(), gcodeCacheKey(config.printerIp, fileName));
     const s = await stat(cached);
@@ -401,6 +405,47 @@ export function getCameraHealth(): 'available' | 'unavailable' {
   if (cachedSnapshot && Date.now() - cacheTime < CACHE_TTL_MS) return 'available';
   if (upstreamActive) return 'available';
   return 'unavailable';
+}
+
+/**
+ * Envoie un fichier à l'imprimante par tranches de 1 Mo (PUT), avec un nouvel essai
+ * sur une erreur de décalage (9000). Partagé par l'envoi navigateur et la bibliothèque.
+ */
+export async function uploadToPrinter(
+  config: ServiceConfig,
+  uploadPath: string,
+  fileName: string,
+  fileData: Buffer,
+): Promise<{ ok: true; md5: string } | { ok: false; error: string; errorCode: number }> {
+  const md5 = createHash('md5').update(fileData).digest('hex');
+  const CHUNK_SIZE = 1024 * 1024;
+  const totalBytes = fileData.length;
+  for (let offset = 0; offset < totalBytes; ) {
+    const end = Math.min(offset + CHUNK_SIZE, totalBytes);
+    const send = () =>
+      uploadChunk(
+        config.printerIp,
+        uploadPath,
+        config.printerPassword,
+        fileName,
+        md5,
+        fileData.subarray(offset, end),
+        offset,
+        end - 1,
+        totalBytes,
+      );
+    let result = await send();
+    if (result.error_code === 9000) result = await send();
+    if (result.error_code !== 0) {
+      return {
+        ok: false,
+        error: `Upload failed at offset ${offset}`,
+        errorCode: result.error_code,
+      };
+    }
+    offset = end;
+  }
+  return { ok: true, md5 };
 }
 
 export async function getSnapshot(config: ServiceConfig): Promise<Buffer | null> {
@@ -1223,6 +1268,8 @@ export function createRestRouter(
     // ── File download proxy ─────────────────────────────────────────
     // GET /api/files/download?file=<path>&source=local|u-disk|sd-card
     // Gcode files are cached on disk so they can be served even when the printer is busy
+    if (handleLibraryRequest(req, res, config)) return;
+
     if (url.startsWith('/api/files/thumbnail') && req.method === 'GET') {
       void handleThumbnail(req, res, _bridge);
       return;
@@ -1347,68 +1394,14 @@ export function createRestRouter(
             return;
           }
 
-          // Compute MD5 of entire file
-          const md5 = createHash('md5').update(fileData).digest('hex');
-
-          // Upload in 1MB chunks via PUT
-          const CHUNK_SIZE = 1024 * 1024;
-          const totalBytes = fileData.length;
-          let offset = 0;
-
-          while (offset < totalBytes) {
-            const end = Math.min(offset + CHUNK_SIZE, totalBytes);
-            const chunkData = fileData.subarray(offset, end);
-
-            const chunkResult = await uploadChunk(
-              config.printerIp,
-              uploadPath,
-              config.printerPassword,
-              fileName,
-              md5,
-              chunkData,
-              offset,
-              end - 1,
-              totalBytes,
-            );
-
-            if (chunkResult.error_code !== 0) {
-              // Retry once on offset mismatch
-              if (chunkResult.error_code === 9000) {
-                const retry = await uploadChunk(
-                  config.printerIp,
-                  uploadPath,
-                  config.printerPassword,
-                  fileName,
-                  md5,
-                  chunkData,
-                  offset,
-                  end - 1,
-                  totalBytes,
-                );
-                if (retry.error_code !== 0) {
-                  res.writeHead(502, { 'Content-Type': 'application/json' });
-                  res.end(
-                    JSON.stringify({
-                      error: `Upload failed at offset ${offset}`,
-                      error_code: retry.error_code,
-                    }),
-                  );
-                  return;
-                }
-              } else {
-                res.writeHead(502, { 'Content-Type': 'application/json' });
-                res.end(
-                  JSON.stringify({
-                    error: `Upload failed at offset ${offset}`,
-                    error_code: chunkResult.error_code,
-                  }),
-                );
-                return;
-              }
-            }
-
-            offset = end;
+          const sent = await uploadToPrinter(config, uploadPath, fileName, fileData);
+          if (!sent.ok) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: sent.error, error_code: sent.errorCode }));
+            return;
           }
+          const { md5 } = sent;
+          const totalBytes = fileData.length;
 
           log.info(`Upload complete: ${fileName} (${formatUploadSize(totalBytes)}, MD5: ${md5})`);
 
