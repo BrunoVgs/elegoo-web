@@ -880,3 +880,14 @@
   margin-right: 6px;
   vertical-align: middle;
 }
+
+@media (max-width: 480px) {
+  .segmented.fill {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .segmented.fill button {
+    border-bottom: 1px solid var(--border);
+  }
+}

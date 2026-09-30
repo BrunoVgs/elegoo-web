@@ -10,24 +10,23 @@ import { $, button, h, ico, setText } from './ui/dom';
 import { confirm } from './ui/modal';
 import { toast } from './ui/toast';
 
-/* ---- séries des graphes ---- */
+/* ---- séries des graphes (libellés et couleurs portés par chaque graphe) ---- */
 
-const SERIES: Array<[string, string, string]> = [
-  ['nozzle', 'Buse', '--t-nozzle'],
-  ['nozzle_tgt', 'Consigne buse', '--t-nozzle'],
-  ['bed', 'Plateau', '--t-bed'],
-  ['bed_tgt', 'Consigne plateau', '--t-bed'],
-  ['chamber', 'Caisson', '--t-chamber'],
-  ['fan_model', 'Pièce', '--info'],
-  ['fan_aux', 'Auxiliaire', '--ok'],
-  ['fan_case', 'Caisson', '--warn'],
-  ['extrusion_rate', 'Extrusion', '--info'],
-  ['ai_motion', 'Mouvement', '--info'],
-  ['ai_printing', 'Impression', '--ok'],
-  ['ai_failure', 'Échec', '--danger'],
-  ['ai_empty', 'Plateau vide', '--muted'],
+const SERIES = [
+  'nozzle',
+  'nozzle_tgt',
+  'bed',
+  'bed_tgt',
+  'chamber',
+  'fan_model',
+  'fan_aux',
+  'fan_case',
+  'ai_motion',
+  'ai_printing',
+  'ai_failure',
+  'ai_empty',
 ];
-for (const [key, label, color] of SERIES) store.charts.defineSeries(key, label, color);
+for (const key of SERIES) store.charts.defineSeries(key, key, '');
 
 function aiPoint(motion: number, scores: Record<string, number>): Record<string, number> {
   return {
