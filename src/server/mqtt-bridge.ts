@@ -199,8 +199,10 @@ export class MqttBridge extends EventEmitter {
 
     this.emit('raw', 'received', topic, data);
 
-    // Any message from the printer resets the heartbeat miss counter
-    this.heartbeatMissed = 0;
+    // Only a response on our own client topic proves our session is alive.
+    // endsWith('/api_response') is not enough: `elegoo/#` stays subscribed when
+    // the SN is already known, so other clients' responses arrive here too.
+    if (topic.endsWith(`/${this.clientId}/api_response`)) this.heartbeatMissed = 0;
     // ...and proves the printer is not the silent one, which is what separates
     // `awaiting_sn` from a genuine registration problem (ELEG-59).
     this.sawPrinterMessage = true;
