@@ -1,4 +1,5 @@
 import { api, postJson } from '../commands';
+import { ISSUE_FR } from '../labels';
 import { beep, notifyPrefs, saveNotifyPrefs } from '../notify';
 import { store } from '../store';
 import { button, h, panel, pill, switchInput } from '../ui/dom';
@@ -7,6 +8,7 @@ import { toast } from '../ui/toast';
 
 interface AILabel {
   label: string;
+  issueType: string;
   severity: 'ok' | 'warning' | 'critical';
   warnThreshold: number;
   critThreshold: number;
@@ -160,8 +162,8 @@ export default function mount(host: HTMLElement): () => void {
           h(
             'div',
             { class: 'list-main' },
-            h('div', { class: 'list-title', title: l.label }, short),
-            h('div', { class: 'list-sub' }, l.group ?? ''),
+            h('div', { class: 'list-title', title: l.label }, ISSUE_FR[l.issueType] ?? short),
+            h('div', { class: 'list-sub' }, short),
           ),
           sev,
           h('div', { class: 'ai-th' }, h('span', { class: 'hint' }, 'alerte %'), warn.el),

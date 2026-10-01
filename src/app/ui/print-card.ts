@@ -103,14 +103,11 @@ export function printCard(): PrintCard {
   );
   const actions = h('div', { class: 'pc-actions' }, pauseBtn, resumeBtn, stopBtn);
   const speedRow = h('div', { class: 'pc-speed' }, h('span', { class: 'label' }, 'Vitesse'), speed);
+  const idleText = h('p', { class: 'muted' });
   const idle = h(
     'div',
     { class: 'pc-idle' },
-    h(
-      'p',
-      { class: 'muted' },
-      "Aucune impression en cours. Les fichiers de l'imprimante sont prêts à être lancés.",
-    ),
+    idleText,
     button('Parcourir les fichiers', { icon: 'files', onClick: () => go('fichiers') }),
   );
 
@@ -145,8 +142,18 @@ export function printCard(): PrintCard {
       query(1045, { storage_media: 'local', file_name: file });
       query(1046, { storage_media: 'local', filename: file });
     }
-    setText(name, active && file ? prettyFile(file) : 'Imprimante disponible');
-    setText(sub, store.phaseLabel);
+    const offline = phase === 'offline';
+    setText(
+      name,
+      active && file ? prettyFile(file) : offline ? store.phaseLabel : 'Imprimante disponible',
+    );
+    setText(sub, offline ? '' : store.phaseLabel);
+    setText(
+      idleText,
+      offline
+        ? "Aucune donnée pour l'instant : l'état et les commandes reviennent dès la reconnexion."
+        : "Aucune impression en cours. Les fichiers de l'imprimante sont prêts à être lancés.",
+    );
 
     const src = store.printer.thumbnail ? `data:image/png;base64,${store.printer.thumbnail}` : '';
     if (active && src && thumb.getAttribute('src') !== src) thumb.src = src;

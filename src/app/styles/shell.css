@@ -63,7 +63,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
   color: var(--text-2);
   font-size: 13px;
 }
@@ -266,7 +265,18 @@
 }
 
 @media (max-width: 480px) {
-  .topbar-state .topbar-extra {
+  /* Huit onglets ne tiennent pas avec leurs libellés : seul l'onglet courant garde le sien. */
+  .rail-item {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .rail-item[aria-current="page"] {
+    flex: none;
+    padding: 6px 8px;
+  }
+
+  .rail-item:not([aria-current="page"]) .rail-label {
     display: none;
   }
 }

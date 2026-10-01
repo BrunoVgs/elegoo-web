@@ -215,7 +215,7 @@
 }
 
 .temp-name {
-  width: 64px;
+  width: 80px;
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -227,9 +227,15 @@
 
 .temp-name::before {
   content: "";
+  flex: none;
   width: 8px;
   height: 8px;
   background: var(--c);
+}
+
+.temp-now,
+.temp-target {
+  white-space: nowrap;
 }
 
 .temp-now {
@@ -258,6 +264,16 @@
 
 .temp-row.chamber {
   grid-template-columns: 1fr;
+}
+
+@media (max-width: 480px) {
+  .temp-row {
+    grid-template-columns: 1fr;
+  }
+
+  .temp-ctl {
+    justify-content: flex-end;
+  }
 }
 
 .temp-presets {
@@ -1004,6 +1020,7 @@
 .ai-th {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
 }
 
@@ -1012,7 +1029,8 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .ai-label-row .list-main {
+  .ai-label-row .list-main,
+  .ai-label-row .select {
     grid-column: 1 / -1;
   }
 }

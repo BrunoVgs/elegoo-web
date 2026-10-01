@@ -18,6 +18,8 @@ export interface WsClientOptions {
   serviceUrl: string;
   onStateChange: (state: ConnectionState) => void;
   onRegistered: (sn: string, printerIp: string) => void;
+  /** Called when the service loses the printer while the WebSocket itself stays up */
+  onPrinterLost?: () => void;
   onMessage: (method: number, data: unknown) => void;
   onStatusEvent: (data: unknown) => void;
   onRawMessage?: (direction: 'sent' | 'received', topic: string, data: unknown) => void;
@@ -115,11 +117,9 @@ export class WsClient {
         // Full state snapshot from service
         this._sn = (msg.sn as string) || '';
         this._printerIp = (msg.printerIp as string) || '';
-        const connected = msg.connected as boolean;
-        if (connected && this._sn) {
-          this.opts.onStateChange('connected');
-          this.opts.onRegistered(this._sn, this._printerIp);
-        }
+        // The init snapshot proves the service link, whatever the printer's own state.
+        this.opts.onStateChange('connected');
+        if (msg.connected && this._sn) this.opts.onRegistered(this._sn, this._printerIp);
         this.opts.onInit?.(msg);
         break;
       }
@@ -128,10 +128,9 @@ export class WsClient {
         const connected = msg.connected as boolean;
         if (connected) {
           this._sn = (msg.sn as string) || this._sn;
-          this.opts.onStateChange('connected');
           this.opts.onRegistered(this._sn, this._printerIp);
         } else {
-          this.opts.onStateChange('disconnected');
+          this.opts.onPrinterLost?.();
         }
         break;
       }

@@ -154,6 +154,18 @@ export const EXCEPTION_FR: Record<number, string> = {
   1302: "Défaut d'impression détecté",
 };
 
+export const ISSUE_FR: Record<string, string> = {
+  ok: 'Impression normale',
+  spaghetti: 'Spaghetti',
+  bed_adhesion: 'Pièce décollée',
+  stringing: 'Fils (stringing)',
+  layer_shift: 'Décalage de couche',
+  warping: 'Warping',
+  blob: 'Amas sur la buse',
+  empty_bed: 'Plateau vide',
+  stall: 'Impression figée',
+};
+
 export const SPEED_MODES = [
   { value: 0, label: 'Silence', pct: 50 },
   { value: 1, label: 'Équilibré', pct: 100 },

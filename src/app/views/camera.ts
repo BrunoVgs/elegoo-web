@@ -1,4 +1,5 @@
 import { ago, clock } from '../format';
+import { ISSUE_FR } from '../labels';
 import { go } from '../router';
 import { store } from '../store';
 import { cameraView } from '../ui/camera';
@@ -10,17 +11,6 @@ const AI_STATE: Record<string, [string, string]> = {
   idle: ["En attente d'une impression", 'info'],
   stopped: ['Arrêtée', 'warn'],
   disabled: ['Désactivée', ''],
-};
-
-const ISSUE_FR: Record<string, string> = {
-  spaghetti: 'Spaghetti',
-  bed_adhesion: 'Pièce décollée',
-  stringing: 'Fils (stringing)',
-  layer_shift: 'Décalage de couche',
-  warping: 'Warping',
-  blob: 'Amas sur la buse',
-  empty_bed: 'Plateau vide',
-  stall: 'Impression figée',
 };
 
 const VERDICT: Record<string, [string, string]> = {

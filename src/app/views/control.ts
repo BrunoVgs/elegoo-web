@@ -132,12 +132,8 @@ export default function mount(host: HTMLElement): () => void {
       h('span', { class: 'pos' }, homed[a], a.toUpperCase(), pos[a]),
     ),
   );
-  const moveLock = h(
-    'div',
-    { class: 'lock-note' },
-    ico('alert'),
-    "Déplacements désactivés pendant l'impression",
-  );
+  const moveLockText = h('span');
+  const moveLock = h('div', { class: 'lock-note' }, ico('alert'), moveLockText);
   const moveBody = h(
     'div',
     { class: 'jog' },
@@ -267,6 +263,12 @@ export default function mount(host: HTMLElement): () => void {
     const s = store.printer.status;
     const busy = store.isActive || store.phase === 'offline';
     moveBody.classList.toggle('locked', busy);
+    setText(
+      moveLockText,
+      store.phase === 'offline'
+        ? 'Déplacements indisponibles : imprimante hors ligne'
+        : "Déplacements désactivés pendant l'impression",
+    );
     for (const b of moveBody.querySelectorAll<HTMLButtonElement>('button')) b.disabled = busy;
     for (const b of maintButtons) b.disabled = busy || store.phase === 'busy';
     const gm = s?.gcode_move;

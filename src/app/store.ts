@@ -115,7 +115,7 @@ class Store {
     const ms = this.printer.status?.machine_status;
     switch (this.phase) {
       case 'offline':
-        return this.connection === 'connected' ? 'Imprimante injoignable' : 'Service injoignable';
+        return this.connection === 'connected' ? 'Imprimante hors ligne' : 'Service injoignable';
       case 'paused':
         return subStatusLabel(ms?.sub_status) || 'En pause';
       case 'ended':

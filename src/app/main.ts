@@ -50,7 +50,7 @@ for (const r of ROUTES) {
       'a',
       { class: 'rail-item', href: `#/${r.id}`, 'data-route': r.id },
       ico(r.icon),
-      h('span', {}, r.label),
+      h('span', { class: 'rail-label' }, r.label),
     ),
   );
 }
@@ -132,7 +132,12 @@ function renderBanners(): void {
     );
   }
   const phase = String(store.service.mqttPhase ?? '');
-  if (store.connection === 'connected' && phase && phase !== 'connected') {
+  if (
+    store.connection === 'connected' &&
+    phase &&
+    phase !== 'connected' &&
+    phase !== 'disconnected'
+  ) {
     const msg =
       phase === 'rejected'
         ? "L'imprimante refuse la connexion : deux clients sont déjà connectés."
@@ -315,13 +320,11 @@ const client = new WsClient({
       query(1036, {});
     }
   },
-  onInit(init) {
-    hydrate(init);
-    if (!init.connected) {
-      store.printerLinked = false;
-      store.emit('connection');
-    }
+  onPrinterLost() {
+    store.printerLinked = false;
+    store.emit('connection');
   },
+  onInit: hydrate,
   onMessage(method, data) {
     store.printer.handleResponse(method, data as Record<string, unknown>);
     settle(method, data);

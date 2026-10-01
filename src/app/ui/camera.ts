@@ -40,6 +40,7 @@ export function cameraView(opts: { compact?: boolean } = {}): CameraView {
   let retry: ReturnType<typeof setTimeout> | null = null;
   let lastPrint = '';
   let sameCount = 0;
+  let wasOffline = false;
 
   const img = h('img', { class: 'cam-img', alt: '' });
   const state = h('div', { class: 'cam-state' });
@@ -134,7 +135,10 @@ export function cameraView(opts: { compact?: boolean } = {}): CameraView {
 
   img.addEventListener('load', () => setState('', ''));
   img.addEventListener('error', () => {
-    setState('Caméra indisponible, nouvelle tentative…', 'error');
+    setState(
+      store.phase === 'offline' ? 'Aucune image' : 'Caméra indisponible, nouvelle tentative…',
+      'error',
+    );
     if (!document.hidden) retry = setTimeout(start, RETRY_MS);
   });
 
@@ -160,7 +164,11 @@ export function cameraView(opts: { compact?: boolean } = {}): CameraView {
     const ps = s?.print_status;
     const active = store.isActive || store.phase === 'ended';
     root.classList.toggle('printing', active);
-    live.classList.toggle('off', store.phase === 'offline');
+    const offline = store.phase === 'offline';
+    live.classList.toggle('off', offline);
+    if (offline && !img.naturalWidth) setState('Aucune image', 'error');
+    else if (wasOffline && !offline && !document.hidden) start();
+    wasOffline = offline;
     setText(phase, store.phaseLabel);
     setText(time, clock(Date.now()));
 
@@ -197,24 +205,15 @@ export function cameraView(opts: { compact?: boolean } = {}): CameraView {
     }
   };
 
-  const onService = () => {
-    const cam = store.service.camera;
-    if (typeof cam === 'string' && cam !== 'available')
-      setState('Caméra désactivée côté service', 'error');
-  };
-
   const unsub = store.on(['status', 'connection'], render);
-  const unsubService = store.on('service', onService);
   const clockTimer = setInterval(() => setText(time, clock(Date.now())), 15000);
   render();
-  onService();
   if (!document.hidden) start();
 
   return {
     el: root,
     destroy() {
       unsub();
-      unsubService();
       stop();
       clearInterval(freezeTimer);
       clearInterval(clockTimer);
