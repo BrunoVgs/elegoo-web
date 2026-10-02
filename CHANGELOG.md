@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.2](https://github.com/runnane/elegoo-web/compare/v1.1.1...v1.1.2) (2026-10-02)
+
+* **deps-dev:** bump @vitest/coverage-v8 from 4.1.10 to 5.0.1 ([#137](https://github.com/runnane/elegoo-web/issues/137)) ([f395904](https://github.com/runnane/elegoo-web/commit/f395904de1e691298f900a0093c635ebc8f4f45d))
+* **deps:** bump dotenv from 17.4.2 to 18.0.2 ([#138](https://github.com/runnane/elegoo-web/issues/138)) ([746a7a9](https://github.com/runnane/elegoo-web/commit/746a7a989f9347c3e5cf8bdb28fc96dbe5253cb4))
+* **deps:** bump fast-uri in the npm_and_yarn group across 1 directory ([#141](https://github.com/runnane/elegoo-web/issues/141)) ([fb0f097](https://github.com/runnane/elegoo-web/commit/fb0f0970547f470b8ef44187021bbb0714f38129))
+* **deps:** bump tsx from 4.23.13 to 4.23.15 ([#139](https://github.com/runnane/elegoo-web/issues/139)) ([00dda5e](https://github.com/runnane/elegoo-web/commit/00dda5ebbc6cfa2593b68b10ee3dd89c8691563f))
+* **deps:** bump ws and @types/ws ([#147](https://github.com/runnane/elegoo-web/issues/147)) ([9a5dc4f](https://github.com/runnane/elegoo-web/commit/9a5dc4fc70fe7aea266bc8f4b65dea97a3bdbf0f))
+
+### Bug Fixes
+
+* **deps:** dependency update, closing the undici, ip-address and fflate advisories (ELEG-117) ([#149](https://github.com/runnane/elegoo-web/issues/149)) ([eb35532](https://github.com/runnane/elegoo-web/commit/eb35532c063c52f782d5e0ac91ecc44b3772bd1d))
+* play timelapses through the service so they work behind a reverse proxy (ELEG-114) ([#148](https://github.com/runnane/elegoo-web/issues/148)) ([2e8d523](https://github.com/runnane/elegoo-web/commit/2e8d52304733328c6810e5eca108d3200b3d9d8a))
+* **server:** only reset the heartbeat on our own api_response ([#143](https://github.com/runnane/elegoo-web/issues/143)) ([ec1f490](https://github.com/runnane/elegoo-web/commit/ec1f4907c3591b5c65cfde99db0cf9b22e7c430c))
+* **server:** only skip superseded frames for slow clients ([#144](https://github.com/runnane/elegoo-web/issues/144)) ([f35911a](https://github.com/runnane/elegoo-web/commit/f35911a3bb0e8b58b8b8c3ba71b0b0949a5c3d80))
+
 ## [1.1.1](https://github.com/runnane/elegoo-web/compare/v1.1.0...v1.1.1) (2026-09-24)
 
 * **deps-dev:** bump @biomejs/biome from 2.5.12 to 2.5.14 ([#133](https://github.com/runnane/elegoo-web/issues/133)) ([15d9d45](https://github.com/runnane/elegoo-web/commit/15d9d459c8a6a548bb5732c3d3f50a0806186eaa))
