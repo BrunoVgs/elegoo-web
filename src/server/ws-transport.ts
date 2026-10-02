@@ -222,17 +222,24 @@ export class WebSocketTransport {
     }
   }
 
-  /** Max queued bytes before dropping messages for a slow client */
+  /** Queued bytes above which superseded messages are skipped for a slow client */
   private static readonly MAX_BUFFERED = 1024 * 1024; // 1 MB
+  /** Queued bytes above which the client is dropped; it reconnects and resyncs from init */
+  private static readonly MAX_BACKLOG = 32 * 1024 * 1024; // 32 MB
+  /** Message types the next one supersedes: safe to skip, unlike responses and status deltas */
+  private static readonly LOSSY = new Set(['raw', 'chart_data', 'ai_chart_data', 'service_status']);
 
-  broadcast(data: unknown): void {
+  broadcast(data: { type: string; [key: string]: unknown }): void {
     const json = JSON.stringify(data);
+    const lossy = WebSocketTransport.LOSSY.has(data.type);
     for (const client of this.wss.clients) {
       if (client.readyState !== WebSocket.OPEN) continue;
-      if (client.bufferedAmount > WebSocketTransport.MAX_BUFFERED) {
-        log.warn(`Dropping message for slow client (buffered: ${client.bufferedAmount})`);
+      if (client.bufferedAmount > WebSocketTransport.MAX_BACKLOG) {
+        log.warn(`Dropping slow client (buffered: ${client.bufferedAmount}), it will resync`);
+        client.terminate();
         continue;
       }
+      if (lossy && client.bufferedAmount > WebSocketTransport.MAX_BUFFERED) continue;
       client.send(json);
     }
   }
